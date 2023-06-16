@@ -1,3 +1,4 @@
+import sys
 import bpy
 import importlib
 from bpy.app.handlers import persistent
@@ -32,7 +33,7 @@ def reload() -> None:
         importlib.reload(m)
 
 
-_need_reload = "prefs" in locals()
+_need_reload = "blender_xsection_tools" in sys.modules
 if _need_reload:
     reload()
 
