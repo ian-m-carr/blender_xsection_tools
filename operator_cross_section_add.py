@@ -194,6 +194,8 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 # add the mesh as an object into the scene with this utility module
                 object_utils.object_data_add(context, mesh, operator=self)
                 # bpy.ops.object.convert('CURVE')
+                # set the cross section origin to the bounding box geometry center
+                bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
 
         return {'FINISHED'}
 
