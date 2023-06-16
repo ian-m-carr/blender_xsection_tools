@@ -1,3 +1,5 @@
+from typing import List
+
 import bpy
 import bmesh
 
@@ -87,8 +89,7 @@ def generate_sections(me, count, step_size, plane_co, plane_no):
         elif len(points) >= 2:
             print('oops {}, {}'.format(len(points), points))
 
-
-    print(edges)
+    # print(edges)
     return verts, edges
 
 
@@ -190,12 +191,19 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         if len(meshes) == 0:
             self.report({'INFO'}, 'No cross sections generated')
         else:
+            section_objects = []
             for mesh in meshes:
-                # add the mesh as an object into the scene with this utility module
-                object_utils.object_data_add(context, mesh, operator=self)
-                # bpy.ops.object.convert('CURVE')
-                # set the cross section origin to the bounding box geometry center
-                bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+                # Create new object with our light datablock.
+                section_object = bpy.data.objects.new(name="Section", object_data=mesh)
+
+                # Link light object to the active collection of current view layer,
+                # so that it'll appear in the current scene.
+                context.view_layer.active_layer_collection.collection.objects.link(section_object)
+
+                # Place light to a specified location.
+                section_object.location = (0, 0, 0)
+
+                section_objects.append(section_object)
 
         return {'FINISHED'}
 
