@@ -1,27 +1,110 @@
+import math
 from typing import List
 
-import bpy
 import bmesh
-
-from bpy_extras import object_utils
+import bpy
+from bpy.props import (
+    FloatProperty, IntProperty, BoolProperty
+)
 from bpy_extras.object_utils import (
     AddObjectHelper
 )
-from bpy.types import (
-    Operator,
-    Panel,
-    AddonPreferences
-)
-from bpy.props import (
-    FloatProperty, IntProperty, FloatVectorProperty
+from bpy_types import (
+    Panel
 )
 from mathutils import (
-    Vector,
-    Matrix
+    Vector, Quaternion
 )
 from mathutils.geometry import (
-    intersect_line_plane
+    intersect_line_plane, intersect_line_line_2d
 )
+
+
+def bound_box(mesh_objs: List[bpy.types.Object]):
+    corn0X = []
+    corn0Y = []
+    corn0Z = []
+    corn6X = []
+    corn6Y = []
+    corn6Z = []
+
+    for ob in mesh_objs:
+        bbox_corners = [ob.matrix_world @ Vector(corner) for corner in ob.bound_box]
+        corn0X.append(bbox_corners[0].x)
+        corn0Y.append(bbox_corners[0].y)
+        corn0Z.append(bbox_corners[0].z)
+        corn6X.append(bbox_corners[6].x)
+        corn6Y.append(bbox_corners[6].y)
+        corn6Z.append(bbox_corners[6].z)
+
+    minA = Vector((min(corn0X), min(corn0Y), min(corn0Z)))
+    maxB = Vector((max(corn6X), max(corn6Y), max(corn6Z)))
+
+    center_point = Vector(((minA.x + maxB.x) / 2, (minA.y + maxB.y) / 2, (minA.z + maxB.z) / 2))
+    dimensions = Vector((maxB.x - minA.x, maxB.y - minA.y, maxB.z - minA.z))
+
+    return center_point, dimensions
+
+
+def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, num_samples: int = 100, outer_surface: bool = True) -> list[Vector]:
+    '''
+    Sample a set of sections (expected to be related co-planar edge sets representing cross sections of all objects in the same plane
+    The sample derived should contain a set of samples on the the outermost surface represented by the section set
+    '''
+
+    # find the center and dimension of the bounding box of the object set (world coords)
+    center, dim = bound_box(section_objects)
+
+    # generate the fan coordinates
+
+    # a vector in the x direction
+    x_vec = Vector((max(dim.x, dim.y) * 2, 0, 0))
+
+    # are we sampling half the section or the whole?
+    # half  true = 0-180 (pi radians) false = 0-360 (pi*2 radians)
+    sweep_angle_step = (math.radians(180) if half else math.radians(360)) / (num_samples - 1)
+    q = Quaternion((0, 0, 1.0), sweep_angle_step)
+
+    # the set of n points in x,y distributed at sweep angle from each other,
+    # the sampling lines are from center to each point
+    line_end_points = []
+    for i in range(num_samples):
+        line_end_points.append(x_vec.copy())
+
+        # rotate our x vector by the quaternion and the world transform
+        x_vec.rotate(q)  # @ rot
+
+    intersections = [None] * len(line_end_points)
+    # iterate the sections and the edges in them
+    for section_object in section_objects:
+        if section_object.type == 'MESH':
+            # create the bmesh container
+            bm = bmesh.new()
+            # populate from the section
+            bm.from_mesh(section_object.data)
+
+            for i in range(len(line_end_points)):
+                end_point = line_end_points[i]
+                for edge in bm.edges:
+                    # does the line from the end point to the center intersect with the edge?
+                    isect = intersect_line_line_2d(edge.verts[0].co, edge.verts[1].co, end_point, center)
+                    if isect:
+                        # is this the outermost intersection seen at this radial?
+                        if intersections[i]:
+                            exist_distance = (center + intersections[i]).length
+                            new_distance = (center + Vector((isect.x, isect.y, 0))).length
+
+                            # are we looking for the outer or the inner surface?
+                            if (outer_surface and new_distance > exist_distance) or (not outer_surface and new_distance < exist_distance):
+                                intersections[i] = (Vector((isect.x, isect.y, 0)))
+                        else:
+                            intersections[i] = (Vector((isect.x, isect.y, 0)))
+
+            # free the bmesh storage
+            bm.free()
+
+    # return the not None outer edge points
+    return [intersection for intersection in intersections if intersection]
 
 
 def generate_sections(me, count, step_size, plane_co, plane_no):
@@ -126,18 +209,47 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
     bl_label = "Add cross-section"
     bl_options = {'REGISTER', 'UNDO'}
 
-    num_sections: IntProperty(
-        name="Num Sections",
-        description="The number of sections",
-        min=1, soft_max=10, max=100,
-        default=1,
+    generate_meshes: BoolProperty(
+        name="Generate Meshes",
+        description="Should we generate (and keep) a cross section Mesh for each object in the selection",
+        default=True
     )
-    step_size: FloatProperty(
-        name="Step Size",
-        description="Distance to step between sections",
-        min=0.01, max=100.0,
-        default=1.0,
+
+    generate_curve: BoolProperty(
+        name="Generate Curve",
+        description="Should we generate a sampled curve for the inner or outer surface of the section",
+        default=True
     )
+    outer_surface: BoolProperty(
+        name="Outer Surface",
+        description="Detect the outer surface (true) or inner surface (false)",
+        default=True
+    )
+    half_section_sampling: BoolProperty(
+        name="Sample Half Section",
+        description="Curve will be generated over the half section (+ve Y)",
+        default=True
+    )
+    num_samples: IntProperty(
+        name="Number samples",
+        description="The number of sampling radials used to generate the curve",
+        default=20
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        layout.prop(self, "generate_meshes")
+        layout.prop(self, "generate_curve")
+
+        if self.generate_curve:
+            box = layout.box()
+            box.label(text='Curve config', icon='CURVE_DATA')
+            box.prop(self, "outer_surface")
+            box.prop(self, "half_section_sampling")
+            box.prop(self, "num_samples")
 
     @classmethod
     def poll(cls, context):
@@ -149,14 +261,10 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
             self.report({'INFO'}, 'No active object selected')
             return {'FINISHED'}
 
-        # set the location to the origin - used by the create object helper
-        self.location = Vector((0, 0, 0))
-        # self.rotation = context.active_object.matrix_world.to_euler()
-
         # take the z axis from the active object
         plane_location = context.active_object.location
         plane_z = Vector((0, 0, -1))
-        plane_z.rotate(context.active_object.matrix_world.to_euler())
+        plane_z.rotate(context.active_object.matrix_basis.to_euler())
 
         meshes = []
         for target_object in context.selected_objects:
@@ -183,7 +291,13 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                     for edge_idx in edge_indices:
                         bm.edges.new([bm.verts[i] for i in edge_idx])
 
+                    bm.transform(context.active_object.matrix_basis.inverted())
+
                     bm.to_mesh(mesh)
+
+                    # free the mesh storage
+                    bm.free()
+
                     mesh.update()
 
                     meshes.append(mesh)
@@ -193,17 +307,57 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         else:
             section_objects = []
             for mesh in meshes:
-                # Create new object with our light datablock.
+                # Create new object with our datablock.
                 section_object = bpy.data.objects.new(name="Section", object_data=mesh)
 
-                # Link light object to the active collection of current view layer,
-                # so that it'll appear in the current scene.
-                context.view_layer.active_layer_collection.collection.objects.link(section_object)
+                # Place at origin of the cutting plane
+                section_object.location = context.active_object.location
+                section_object.rotation_euler = context.active_object.rotation_euler
 
-                # Place light to a specified location.
-                section_object.location = (0, 0, 0)
-
+                # append to the section collection
                 section_objects.append(section_object)
+
+            # are we generating the surface curve?
+            if self.generate_curve:
+                points = sample_sections(section_objects, self.half_section_sampling, self.num_samples, self.outer_surface)
+
+                # TODO: the points list may contain None objects if there is a whole at some of the radials!
+                print('points {}'.format(points))
+
+                # create the Curve Datablock
+                curve_data = bpy.data.curves.new('myCurve', type='CURVE')
+
+                # map coords to spline
+                polyline = curve_data.splines.new('BEZIER')
+
+                # if we are sampling 360 the resultant spline should be cyclic!
+                polyline.use_cyclic_u = not self.half_section_sampling
+
+                polyline.bezier_points.add(len(points) - 1)
+                for i, coord in enumerate(points):
+                    polyline.bezier_points[i].co = points[i]
+                    polyline.bezier_points[i].handle_left_type = 'AUTO'
+                    polyline.bezier_points[i].handle_right_type = 'AUTO'
+
+                # create Object
+                curve_obj = bpy.data.objects.new('myCurve', curve_data)
+                # Place at origin of the cutting plane
+                curve_obj.location = context.active_object.location
+                curve_obj.rotation_euler = context.active_object.rotation_euler
+
+                # attach to scene
+                context.view_layer.active_layer_collection.collection.objects.link(curve_obj)
+
+            # delete or preserve the section meshes
+            for section_object in section_objects:
+                # are we preserving the mesh objects?
+                if self.generate_meshes:
+                    # Link the object to the active collection of current view layer,
+                    # so that it'll appear in the current scene.
+                    context.view_layer.active_layer_collection.collection.objects.link(section_object)
+                else:
+                    # remove it
+                    bpy.data.objects.remove(section_object, do_unlink=True)
 
         return {'FINISHED'}
 
