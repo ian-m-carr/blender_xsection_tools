@@ -4,7 +4,7 @@ import importlib
 from bpy.app.handlers import persistent
 from bpy.types import Menu
 
-from . import operator_cross_section_add
+from . import operator_cross_section_add, acf_body_export_op
 
 bl_info = {
     "name": "(IMC) Blender X-Section tools",
@@ -20,11 +20,13 @@ bl_info = {
 }
 
 modules = [
- operator_cross_section_add
+    operator_cross_section_add,
+    acf_body_export_op
 ]
 
 classes = [
 ]
+
 
 def reload() -> None:
     global modules
@@ -36,6 +38,7 @@ def reload() -> None:
 _need_reload = "blender_xsection_tools" in sys.modules
 if _need_reload:
     reload()
+
 
 # ----------------REGISTER--------------.
 
@@ -53,6 +56,7 @@ def register() -> None:
     for cls in classes:
         bpy.utils.register_class(cls)
 
+
 def unregister() -> None:
     if bpy.app.background:
         return
@@ -64,4 +68,4 @@ def unregister() -> None:
             m.unregister()
 
     for cls in classes:
-        bpy.utils. unregister_class(cls)
+        bpy.utils.unregister_class(cls)
