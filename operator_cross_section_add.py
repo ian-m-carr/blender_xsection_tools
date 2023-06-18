@@ -104,6 +104,7 @@ def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, 
             bm.free()
 
     # return the not None outer edge points
+    # cleanup any samples for radii where no intersection was found
     return [intersection for intersection in intersections if intersection]
 
 
@@ -169,8 +170,8 @@ def generate_sections(me, count, step_size, plane_co, plane_no):
             if not edge in edges:
                 edges.append(tuple(points))
                 # print('appending: {}'.format(tuple(points)))
-        elif len(points) >= 2:
-            print('oops {}, {}'.format(len(points), points))
+        #elif len(points) >= 2:
+        #    print('oops {}, {}'.format(len(points), points))
 
     # print(edges)
     return verts, edges
@@ -321,8 +322,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
             if self.generate_curve:
                 points = sample_sections(section_objects, self.half_section_sampling, self.num_samples, self.outer_surface)
 
-                # TODO: the points list may contain None objects if there is a whole at some of the radials!
-                print('points {}'.format(points))
+                #print('points {}'.format(points))
 
                 # create the Curve Datablock
                 curve_data = bpy.data.curves.new('myCurve', type='CURVE')
