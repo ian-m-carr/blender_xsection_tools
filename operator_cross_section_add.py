@@ -57,13 +57,13 @@ def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, 
 
     # generate the fan coordinates
 
-    # a vector in the x direction
-    x_vec = Vector((max(dim.x, dim.y) * 2, 0, 0))
+    # a vector in the y direction
+    x_vec = Vector((0, max(dim.x, dim.y) * 2, 0))
 
     # are we sampling half the section or the whole?
     # half  true = 0-180 (pi radians) false = 0-360 (pi*2 radians)
     sweep_angle_step = (math.radians(180) if half else math.radians(360)) / (num_samples - 1)
-    q = Quaternion((0, 0, 1.0), sweep_angle_step)
+    q = Quaternion((0, 0, -1.0), sweep_angle_step)
 
     # the set of n points in x,y distributed at sweep angle from each other,
     # the sampling lines are from center to each point
