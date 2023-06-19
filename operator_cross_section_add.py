@@ -108,7 +108,7 @@ def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, 
     return [intersection for intersection in intersections if intersection]
 
 
-def generate_sections(me, count, step_size, plane_co, plane_no):
+def generate_sections(me, plane_co, plane_no):
     verts = []
 
     ed_xsect = {}
@@ -277,7 +277,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 # apply transforms equivalent
                 bm.transform(target_object.matrix_basis)
 
-                verts, edge_indices = generate_sections(bm, self.num_sections, self.step_size, plane_location, plane_z)
+                verts, edge_indices = generate_sections(bm, plane_location, plane_z)
 
                 if len(edge_indices) > 0:
                     mesh = bpy.data.meshes.new("Section")
