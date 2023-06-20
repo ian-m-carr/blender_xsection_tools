@@ -52,7 +52,7 @@ class ExportACFBodyData(Operator, ExportHelper):
         # Z
         print('P _body/{}/_geo_xyz/{},{},2 {}'.format(body_num, station_indx, point_indx, round(station_z * CONV_M_TO_FT, 4)), file=o_file)
 
-    def write_curve_data(self, o_file: IO, curve: bpy.types.Object, zero_z_pos: float, station_indx: int):
+    def write_station_data(self, o_file: IO, curve: bpy.types.Object, zero_z_pos: float, station_indx: int):
         # get the relative z position for the curve
         glob_pos = self.global_location_in_local_orientation(curve);
         station_z = glob_pos.z - zero_z_pos
@@ -74,6 +74,11 @@ class ExportACFBodyData(Operator, ExportHelper):
             self.write_station_element(o_file, station_indx, station_z, i, 0, 0)
 
         pass
+
+    def write_blank_station_data(self, o_file: IO, first_station_indx: int, count: int):
+        for station_indx in range(first_station_indx, first_station_indx+count):
+            for n in range(18):
+                self.write_station_element(o_file, station_indx, 0.0, n, 0.0, 0.0)
 
     def write_data(self, context):
         # selection should be a set of curves
@@ -116,13 +121,14 @@ class ExportACFBodyData(Operator, ExportHelper):
         # now take the zero position
         zero_z_pos = self.global_location_in_local_orientation(sorted_curve_objects[0]).z
 
-        f = open(self.filepath, 'w', encoding='utf-8')
+        with open(self.filepath, 'w', encoding='utf-8') as f:
+            for curve in sorted_curve_objects:
+                self.write_station_data(f, curve, zero_z_pos, sorted_curve_objects.index(curve))
 
-        for curve in sorted_curve_objects:
-            self.write_curve_data(f, curve, zero_z_pos, sorted_curve_objects.index(curve))
+            # fill the blank elements up to curve 20
+            last_index = len(sorted_curve_objects)
+            self.write_blank_station_data(f, last_index, 20-last_index)
 
-        # f.write("Hello World %s" % use_some_setting)
-        f.close()
 
         return {'FINISHED'}
 
