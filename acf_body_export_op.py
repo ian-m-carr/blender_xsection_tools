@@ -35,7 +35,7 @@ class ExportACFBodyData(Operator, ExportHelper):
         # global position
         glob_location = obj.matrix_world.translation.copy()
         # local rotation
-        loc_rot = obj.matrix_local.to_euler()
+        loc_rot = obj.matrix_local.inverted().to_euler()
         # rotate to local axes
         glob_location.rotate(loc_rot)
 
@@ -55,7 +55,7 @@ class ExportACFBodyData(Operator, ExportHelper):
     def write_station_data(self, o_file: IO, curve: bpy.types.Object, zero_z_pos: float, station_indx: int):
         # get the relative z position for the curve
         glob_pos = self.global_location_in_local_orientation(curve);
-        station_z = glob_pos.z - zero_z_pos
+        station_z = zero_z_pos - glob_pos.z
 
         # points are reflected in X so for 8 intersections we have 16 points 0-15
         bez_points = [bez_point for spline in curve.data.splines for bez_point in spline.bezier_points]
@@ -116,7 +116,7 @@ class ExportACFBodyData(Operator, ExportHelper):
             return {"CANCELLED"}
 
         # sort the curves into z order (taking the local z axis) the greatest z marks the 0 position (front
-        sorted_curve_objects = sorted(context.selected_objects, key=lambda obj: self.global_location_in_local_orientation(obj).z)
+        sorted_curve_objects = sorted(context.selected_objects, key=lambda obj: self.global_location_in_local_orientation(obj).z, reverse=True)
 
         # now take the zero position
         zero_z_pos = self.global_location_in_local_orientation(sorted_curve_objects[0]).z
