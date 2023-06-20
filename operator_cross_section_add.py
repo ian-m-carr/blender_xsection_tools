@@ -3,6 +3,7 @@ from typing import List
 
 import bmesh
 import bpy
+import idprop
 import mathutils
 from bpy.props import (
     FloatProperty, IntProperty, BoolProperty
@@ -285,15 +286,13 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         # need at least 2 objects selected and 1 active
         return context.active_object is not None and len(context.selected_objects) > 1
 
-    def execute(self, context):
-        if context.active_object == None:
-            self.report({'INFO'}, 'No active object selected')
-            return {'FINISHED'}
-
+    def generate_section(self, context, z_offset):
         # take the z axis from the active object
-        plane_location = context.active_object.location
+        plane_location = context.active_object.location.copy()
         plane_z = Vector((0, 0, -1))
         plane_z.rotate(context.active_object.matrix_basis.to_euler())
+
+        plane_location = plane_location + plane_z * z_offset
 
         meshes = []
         for target_object in context.selected_objects:
@@ -320,7 +319,9 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                     for edge_idx in edge_indices:
                         bm.edges.new([bm.verts[i] for i in edge_idx])
 
-                    bm.transform(context.active_object.matrix_basis.inverted())
+                    mat_offset = mathutils.Matrix.Translation(Vector((0, 0, z_offset)))
+
+                    bm.transform(mat_offset @ context.active_object.matrix_basis.inverted())
 
                     bm.to_mesh(mesh)
 
@@ -340,7 +341,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 section_object = bpy.data.objects.new(name="Section", object_data=mesh)
 
                 # Place at origin of the cutting plane
-                section_object.location = context.active_object.location
+                section_object.location = plane_location #context.active_object.location
                 section_object.rotation_euler = context.active_object.rotation_euler
 
                 # append to the section collection
@@ -370,7 +371,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 # create Object
                 curve_obj = bpy.data.objects.new('myCurve', curve_data)
                 # Place at origin of the cutting plane
-                curve_obj.location = context.active_object.location
+                curve_obj.location = plane_location # context.active_object.location
                 curve_obj.rotation_euler = context.active_object.rotation_euler
 
                 # attach to scene
@@ -387,8 +388,24 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                     # remove it
                     bpy.data.objects.remove(section_object, do_unlink=True)
 
-        return {'FINISHED'}
 
+    def execute(self, context):
+        if context.active_object == None:
+            self.report({'INFO'}, 'No active object selected')
+            return {'FINISHED'}
+
+        sample_offsets = [0.0]
+        z_offset_prop = context.active_object.get('z_offsets')
+        if z_offset_prop != None:
+            if type(z_offset_prop) is idprop.types.IDPropertyArray:
+                sample_offsets = z_offset_prop.to_list()
+            else:
+                sample_offsets = [z_offset_prop]
+
+        for offset in sample_offsets:
+            self.generate_section(context, offset)
+
+        return {'FINISHED'}
 
 def menu_func(self, context):
     self.layout.operator(OBJECT_OT_AddSections.bl_idname, icon='MESH_CUBE')
