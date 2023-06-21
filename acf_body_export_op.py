@@ -58,12 +58,17 @@ class ExportACFBodyData(Operator, ExportHelper):
         station_z = zero_z_pos - glob_pos.z
 
         # points are reflected in X so for 8 intersections we have 16 points 0-15
-        bez_points = [bez_point for spline in curve.data.splines for bez_point in spline.bezier_points]
-        num_points = len(bez_points)
+        points = []
+        for spline in curve.data.splines:
+            if spline.type == "BEZIER":
+                points = [bez_point.co for bez_point in spline.bezier_points]
+            elif spline.type == "POLY":
+                points = [point.co for point in spline.points]
+        num_points = len(points)
 
         for point_indx in range(num_points):
             # position 0 -> (n/2-1)
-            coord = bez_points[point_indx].co
+            coord = points[point_indx]
 
             self.write_station_element(o_file, station_indx, station_z, point_indx, coord.x, coord.y)
             # reflected in x (n-1) -> n/2
@@ -76,7 +81,7 @@ class ExportACFBodyData(Operator, ExportHelper):
         pass
 
     def write_blank_station_data(self, o_file: IO, first_station_indx: int, count: int):
-        for station_indx in range(first_station_indx, first_station_indx+count):
+        for station_indx in range(first_station_indx, first_station_indx + count):
             for n in range(18):
                 self.write_station_element(o_file, station_indx, 0.0, n, 0.0, 0.0)
 
@@ -90,8 +95,10 @@ class ExportACFBodyData(Operator, ExportHelper):
             self.report({'ERROR'}, 'Selection should contain only curves')
             return {"CANCELLED"}
 
-        if not all([spline.type == 'BEZIER' for obj in context.selected_objects for spline in obj.data.splines]):
-            self.report({'ERROR'}, 'Selection should contain only curves whose splines are all of type Bezier')
+        bez = all([spline.type == 'BEZIER' for obj in context.selected_objects for spline in obj.data.splines])
+        poly = all([spline.type == 'POLY' for obj in context.selected_objects for spline in obj.data.splines])
+        if (not bez) and (not poly):
+            self.report({'ERROR'}, 'Selection should contain only curves whose splines are all of type Bezier or all of type Poly')
             return {"CANCELLED"}
 
         if any([spline.use_cyclic_u for obj in context.selected_objects for spline in obj.data.splines]):
@@ -100,7 +107,11 @@ class ExportACFBodyData(Operator, ExportHelper):
         # the number of points in each curve should be the same and in the range 3-9
         count = -1
         for o in context.selected_objects:
-            npoints = sum(len(spline.bezier_points) for spline in o.data.splines)
+            npoints = 0
+            if bez:
+                npoints = sum(len(spline.bezier_points) for spline in o.data.splines)
+            elif poly:
+                npoints = sum(len(spline.points) for spline in o.data.splines)
 
             if npoints == 0:
                 self.report({'ERROR'}, 'At least one of the selected curves contains no points')
@@ -127,8 +138,7 @@ class ExportACFBodyData(Operator, ExportHelper):
 
             # fill the blank elements up to curve 20
             last_index = len(sorted_curve_objects)
-            self.write_blank_station_data(f, last_index, 20-last_index)
-
+            self.write_blank_station_data(f, last_index, 20 - last_index)
 
         return {'FINISHED'}
 
