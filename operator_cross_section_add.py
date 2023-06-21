@@ -6,7 +6,7 @@ import bpy
 import idprop
 import mathutils
 from bpy.props import (
-    FloatProperty, IntProperty, BoolProperty
+    IntProperty, BoolProperty
 )
 from bpy_extras.object_utils import (
     AddObjectHelper
@@ -47,6 +47,7 @@ def bound_box(mesh_objs: List[bpy.types.Object]):
 
     return center_point, dimensions
 
+
 def get_geom_center_obj(obj: bpy.types.Object) -> mathutils.Vector:
     '''
     Derive the geometric center of the vertices of a mesh (This is not the center of mass!)
@@ -54,14 +55,15 @@ def get_geom_center_obj(obj: bpy.types.Object) -> mathutils.Vector:
     :return: a Vector representing the geometric center point
     '''
     # sum x,y and z for each vertex in the mesh
-    x, y, z = [ sum( [v.co[i] for v in obj.data.vertices] ) for i in range(3)]
+    x, y, z = [sum([v.co[i] for v in obj.data.vertices]) for i in range(3)]
     num_verts = float(len(obj.data.vertices))
     # average in each axis
     # convert to world location.
     '''obj.matrix_world @'''
-    return (Vector( (x, y, z ) ) / num_verts )
+    return (Vector((x, y, z)) / num_verts)
 
-def get_geom_center_objlist(objects: List[bpy.types.Object])-> mathutils.Vector:
+
+def get_geom_center_objlist(objects: List[bpy.types.Object]) -> mathutils.Vector:
     '''
     derive the geometric center of a collection of meshes
     :param objects: the set of object to examine
@@ -70,11 +72,12 @@ def get_geom_center_objlist(objects: List[bpy.types.Object])-> mathutils.Vector:
     # get the centers of each object individually
     centers = [get_geom_center_obj(object) for object in objects]
     # sum the x,y,z coordinates
-    x,y,z = [ sum( [center[i] for center in centers] ) for i in range(3)]
+    x, y, z = [sum([center[i] for center in centers]) for i in range(3)]
     # divide the sums by the number of objects to get the average
-    return (Vector( (x, y, z ) ) / len(centers) )
+    return (Vector((x, y, z)) / len(centers))
 
-def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, num_samples: int = 100, outer_surface: bool = True) -> list[Vector]:
+
+def sample_sections(section_objects: List[bpy.types.Object], sample_angles: List[float], outer_surface: bool = True) -> list[Vector]:
     '''
     Sample a set of sections (expected to be related co-planar edge sets representing cross sections of all objects in the same plane
     The sample derived should contain a set of samples on the the outermost surface represented by the section set
@@ -86,22 +89,15 @@ def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, 
 
     # generate the fan coordinates
 
-    # a vector in the y direction
-    x_vec = Vector((0, max(dim.x, dim.y) * 2, 0))
-
-    # are we sampling half the section or the whole?
-    # half  true = 0-180 (pi radians) false = 0-360 (pi*2 radians)
-    sweep_angle_step = (math.radians(180) if half else math.radians(360)) / (num_samples - 1)
-    q = Quaternion((0, 0, -1.0), sweep_angle_step)
-
     # the set of n points in x,y distributed at sweep angle from each other,
     # the sampling lines are from center to each point
     line_end_points = []
-    for i in range(num_samples):
-        line_end_points.append(x_vec.copy())
-
-        # rotate our x vector by the quaternion and the world transform
-        x_vec.rotate(q)  # @ rot
+    # print(sample_angles)
+    for angle in sample_angles:
+        q = Quaternion((0.0, 0.0, -1.0), math.radians(angle))
+        v = Vector((0, max(dim.x, dim.y) * 2, 0))
+        v.rotate(q)
+        line_end_points.append(v)
 
     intersections = [None] * len(line_end_points)
     # iterate the sections and the edges in them
@@ -116,12 +112,12 @@ def sample_sections(section_objects: List[bpy.types.Object], half: bool = True, 
                 end_point = line_end_points[i]
                 for edge in bm.edges:
                     # does the line from the end point to the center intersect with the edge?
-                    isect = intersect_line_line_2d(edge.verts[0].co, edge.verts[1].co, geom_center + end_point, geom_center)
+                    isect = intersect_line_line_2d(edge.verts[0].co, edge.verts[1].co, geom_center + end_point, bbox_center)
                     if isect:
                         # is this the outermost intersection seen at this radial?
                         if intersections[i]:
-                            exist_distance = (geom_center + intersections[i]).length
-                            new_distance = (geom_center + Vector((isect.x, isect.y, 0))).length
+                            exist_distance = (bbox_center + intersections[i]).length
+                            new_distance = (bbox_center + Vector((isect.x, isect.y, 0))).length
 
                             # are we looking for the outer or the inner surface?
                             if (outer_surface and new_distance > exist_distance) or (not outer_surface and new_distance < exist_distance):
@@ -199,7 +195,7 @@ def generate_sections(me, plane_co, plane_no):
             if not edge in edges:
                 edges.append(tuple(points))
                 # print('appending: {}'.format(tuple(points)))
-        #elif len(points) >= 2:
+        # elif len(points) >= 2:
         #    print('oops {}, {}'.format(len(points), points))
 
     # print(edges)
@@ -244,7 +240,6 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         description="Should we generate (and keep) a cross section Mesh for each object in the selection",
         default=True
     )
-
     generate_curve: BoolProperty(
         name="Generate Curve",
         description="Should we generate a sampled curve for the inner or outer surface of the section",
@@ -262,8 +257,19 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
     )
     num_samples: IntProperty(
         name="Number samples",
-        description="The number of sampling radials used to generate the curve",
-        default=20
+        description="The number of sampling radials used to generate the curve (per half)",
+        default=9,
+        max=20
+    )
+    save_sample_angles: BoolProperty(
+        name="Save sampling angles",
+        description="Save the angles used for sampling to the target object for re-use/adjustment",
+        default=False
+    )
+    generate_bezier: BoolProperty(
+        name="Generate bezier curve",
+        description="Generate the curve as a Bezier curve, alternative is a polyline",
+        default=True
     )
 
     def draw(self, context):
@@ -277,9 +283,15 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         if self.generate_curve:
             box = layout.box()
             box.label(text='Curve config', icon='CURVE_DATA')
+            box.prop(self, "generate_bezier")
             box.prop(self, "outer_surface")
             box.prop(self, "half_section_sampling")
-            box.prop(self, "num_samples")
+            sample_angles_prop = context.active_object.get('sample_angles')
+            if sample_angles_prop != None:
+                box.label(text="found sampling angles property, num-samples: {}".format(len(sample_angles_prop) + 2))
+            else:
+                box.prop(self, "num_samples")
+            box.prop(self, "save_sample_angles")
 
     @classmethod
     def poll(cls, context):
@@ -341,7 +353,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 section_object = bpy.data.objects.new(name="Section", object_data=mesh)
 
                 # Place at origin of the cutting plane
-                section_object.location = plane_location #context.active_object.location
+                section_object.location = plane_location  # context.active_object.location
                 section_object.rotation_euler = context.active_object.rotation_euler
 
                 # append to the section collection
@@ -349,29 +361,71 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
 
             # are we generating the surface curve?
             if self.generate_curve:
-                points = sample_sections(section_objects, self.half_section_sampling, self.num_samples, self.outer_surface)
+                # do we have a predetermined set of sample angles?
+                sample_angles_prop = target_object.get('sample_angles')
+                if sample_angles_prop == None:
+                    sweep_angle_step = 180 / (self.num_samples - 1)
+                    # generate the angles
+                    sample_angles = [i * sweep_angle_step for i in range(self.num_samples)]
+                else:
+                    # add the begining and end angles
+                    sample_angles = sample_angles_prop.to_list()
+                    sample_angles.insert(0, 0)
+                    sample_angles.append(180)
 
-                #print('points {}'.format(points))
+                if len(sample_angles) < 3:
+                    self.report({'ERROR'}, "insufficient sampling angles supplied! {}".format(len(sample_angles)))
+                if len(sample_angles) != self.num_samples:
+                    self.report({'ERROR'},
+                                "supplied sample angle count mismatch, for {} samples expected {} angles, don't supply 0 and 180".format(self.num_samples,
+                                                                                                                                         len(sample_angles)))
+                    return
+
+                # should we write the angles back to target object to allow the user to edit and re-use?
+                if self.save_sample_angles:
+                    saved_angles = sample_angles.copy()
+                    # loose the first and last
+                    saved_angles.pop(len(sample_angles) - 1)
+                    saved_angles.pop(0)
+
+                    target_object['sample_angles'] = saved_angles
+
+                # if we are not half sectioning then reflect the sampling angles
+                if not self.half_section_sampling:
+                    for i in range(len(sample_angles) - 2, 0, -1):
+                        sample_angles.append(-sample_angles[i])
+
+                points = sample_sections(section_objects, sample_angles, self.outer_surface)
+
+                # print('points {}'.format(points))
 
                 # create the Curve Datablock
                 curve_data = bpy.data.curves.new('myCurve', type='CURVE')
 
                 # map coords to spline
-                polyline = curve_data.splines.new('BEZIER')
+                if self.generate_bezier:
+                    polyline = curve_data.splines.new('BEZIER')
+                else:
+                    polyline = curve_data.splines.new('POLY')
 
                 # if we are sampling 360 the resultant spline should be cyclic!
                 polyline.use_cyclic_u = not self.half_section_sampling
 
-                polyline.bezier_points.add(len(points) - 1)
-                for i, coord in enumerate(points):
-                    polyline.bezier_points[i].co = points[i]
-                    polyline.bezier_points[i].handle_left_type = 'AUTO'
-                    polyline.bezier_points[i].handle_right_type = 'AUTO'
+                if self.generate_bezier:
+                    polyline.bezier_points.add(len(points) - 1)
+                    for i, coord in enumerate(points):
+                        polyline.bezier_points[i].co = points[i]
+                        polyline.bezier_points[i].handle_left_type = 'AUTO'
+                        polyline.bezier_points[i].handle_right_type = 'AUTO'
+                else:
+                    polyline.points.add(len(points) - 1)
+                    for i, coord in enumerate(points):
+                        polyline.points[i].co = points[i].to_4d()
 
                 # create Object
                 curve_obj = bpy.data.objects.new('myCurve', curve_data)
                 # Place at origin of the cutting plane
-                curve_obj.location = plane_location # context.active_object.location
+                curve_obj.location = plane_location  # context.active_object.location
                 curve_obj.rotation_euler = context.active_object.rotation_euler
 
                 # attach to scene
@@ -387,7 +441,6 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 else:
                     # remove it
                     bpy.data.objects.remove(section_object, do_unlink=True)
-
 
     def execute(self, context):
         if context.active_object == None:
@@ -406,6 +459,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
             self.generate_section(context, offset)
 
         return {'FINISHED'}
+
 
 def menu_func(self, context):
     self.layout.operator(OBJECT_OT_AddSections.bl_idname, icon='MESH_CUBE')
