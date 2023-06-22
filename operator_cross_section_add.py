@@ -48,33 +48,6 @@ def bound_box(mesh_objs: List[bpy.types.Object]):
     return center_point, dimensions
 
 
-def get_geom_center_obj(obj: bpy.types.Object) -> mathutils.Vector:
-    '''
-    Derive the geometric center of the vertices of a mesh (This is not the center of mass!)
-    :param obj: the 'MESH' object to calculate for
-    :return: a Vector representing the geometric center point
-    '''
-    # sum x,y and z for each vertex in the mesh
-    x, y, z = [sum([v.co[i] for v in obj.data.vertices]) for i in range(3)]
-    num_verts = float(len(obj.data.vertices))
-    # average in each axis
-    return (Vector((x, y, z)) / num_verts)
-
-
-def get_geom_center_objlist(objects: List[bpy.types.Object]) -> mathutils.Vector:
-    '''
-    derive the geometric center of a collection of meshes
-    :param objects: the set of object to examine
-    :return: the geometric center of all of the objects
-    '''
-    # get the centers of each object individually
-    centers = [get_geom_center_obj(object) for object in objects]
-    # sum the x,y,z coordinates
-    x, y, z = [sum([center[i] for center in centers]) for i in range(3)]
-    # divide the sums by the number of objects to get the average
-    return (Vector((x, y, z)) / len(centers))
-
-
 def sample_sections(section_objects: List[bpy.types.Object], sample_angles: List[float], outer_surface: bool = True) -> list[Vector]:
     '''
     Sample a set of sections (expected to be related co-planar edge sets representing cross sections of all objects in the same plane
@@ -83,7 +56,6 @@ def sample_sections(section_objects: List[bpy.types.Object], sample_angles: List
 
     # find the center and dimension of the bounding box of the object set (world coords)
     bbox_center, dim = bound_box(section_objects)
-    geom_center = get_geom_center_objlist(section_objects)
 
     # generate the fan coordinates
 
@@ -110,7 +82,7 @@ def sample_sections(section_objects: List[bpy.types.Object], sample_angles: List
                 end_point = line_end_points[i]
                 for edge in bm.edges:
                     # does the line from the end point to the center intersect with the edge?
-                    isect = intersect_line_line_2d(edge.verts[0].co, edge.verts[1].co, geom_center + end_point, bbox_center)
+                    isect = intersect_line_line_2d(edge.verts[0].co, edge.verts[1].co, bbox_center + end_point, bbox_center)
                     if isect:
                         # is this the outermost intersection seen at this radial?
                         if intersections[i]:
