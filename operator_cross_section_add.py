@@ -58,8 +58,6 @@ def get_geom_center_obj(obj: bpy.types.Object) -> mathutils.Vector:
     x, y, z = [sum([v.co[i] for v in obj.data.vertices]) for i in range(3)]
     num_verts = float(len(obj.data.vertices))
     # average in each axis
-    # convert to world location.
-    '''obj.matrix_world @'''
     return (Vector((x, y, z)) / num_verts)
 
 
