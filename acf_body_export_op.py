@@ -1,3 +1,5 @@
+import pathlib
+
 import bpy
 from typing import IO
 from bpy_extras.io_utils import ExportHelper
@@ -15,13 +17,39 @@ class ExportACFBodyData(Operator, ExportHelper):
     bl_label = "X-Plane body profile export (.acf)"
 
     # ExportHelper mixin class uses this
-    filename_ext = ".acf"
+    filename_ext = ".body-acf"
 
     filter_glob: StringProperty(
-        default="*.acf",
+        default="*.body-acf",
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+
+    def draw_wrapped_label(self, layout, text: str, width: int, icon: str = None):
+        import textwrap
+        wrap = textwrap.TextWrapper(width=width)  # 50 = maximum length
+        wList = wrap.wrap(text=text)
+        for text in wList:
+            row = layout.row(align=True)
+            row.alignment = 'EXPAND'
+            if icon:
+                row.label(text=text, icon=icon)
+            else:
+                row.label(text=text)
+
+    def draw(self, context):
+
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        layout.label(text="Export the curve points as")
+        layout.label(text="an X-Plane acf formatted body")
+
+        of_path = pathlib.Path(self.filepath)
+        if of_path.is_file():
+            self.draw_wrapped_label(layout, "DO NOT USE EXPORT INTO AN EXISTING ACTUAL ACF FILE", 30, icon="ERROR")
+            self.draw_wrapped_label(layout, "This will replace the content with a single body element, removing all other content!", 30)
 
     @classmethod
     def poll(cls, context):
@@ -132,7 +160,16 @@ class ExportACFBodyData(Operator, ExportHelper):
         # now take the zero position
         zero_z_pos = self.global_location_in_local_orientation(sorted_curve_objects[0]).z
 
-        with open(self.filepath, 'w', encoding='utf-8') as f:
+        # deal with the output file backup
+        of_path = pathlib.Path(self.filepath)
+        if of_path.is_file():
+            backup_path = of_path.with_suffix(of_path.suffix + '.bak')
+            if backup_path.exists():
+                backup_path.unlink()
+            of_path.rename(backup_path)
+
+        # now output the content
+        with of_path.open('w') as f:
             for curve in sorted_curve_objects:
                 self.write_station_data(f, curve, zero_z_pos, sorted_curve_objects.index(curve))
 
