@@ -69,21 +69,25 @@ class ExportACFBodyData(Operator, ExportHelper):
 
         return glob_location
 
-    def write_station_element(self, o_file: IO, station_indx: int, station_z: float, point_indx: int, x: float, y: float):
-        body_num = 0
+    def write_station_element(self, o_file: IO, station_indx: int, station_z: float, point_indx: int, x: float, y: float, body_id: int):
         # X scaled by file scaling and converted m->ft
         x = x * CONV_M_TO_FT
-        print('P _body/{}/_geo_xyz/{},{},0 {}'.format(body_num, station_indx, point_indx, round(x, 4)), file=o_file)
+        print('P _body/{}/_geo_xyz/{},{},0 {}'.format(body_id, station_indx, point_indx, round(x, 4)), file=o_file)
         # Y
         y = y * CONV_M_TO_FT
-        print('P _body/{}/_geo_xyz/{},{},1 {}'.format(body_num, station_indx, point_indx, round(y, 4)), file=o_file)
+        print('P _body/{}/_geo_xyz/{},{},1 {}'.format(body_id, station_indx, point_indx, round(y, 4)), file=o_file)
         # Z
-        print('P _body/{}/_geo_xyz/{},{},2 {}'.format(body_num, station_indx, point_indx, round(station_z * CONV_M_TO_FT, 4)), file=o_file)
+        print('P _body/{}/_geo_xyz/{},{},2 {}'.format(body_id, station_indx, point_indx, round(station_z * CONV_M_TO_FT, 4)), file=o_file)
 
-    def write_station_data(self, o_file: IO, curve: bpy.types.Object, zero_z_pos: float, station_indx: int):
+    def write_station_data(self, o_file: IO, curve: bpy.types.Object, zero_z_pos: float, station_indx: int, body_id: int):
         # get the relative z position for the curve
         glob_pos = self.global_location_in_local_orientation(curve);
         station_z = zero_z_pos - glob_pos.z
+
+        # do we have an adjustment to apply?
+        z_adjust_prop = curve.get('z_adjust')
+        if z_adjust_prop != None:
+            station_z += z_adjust_prop
 
         # points are reflected in X so for 8 intersections we have 16 points 0-15
         points = []
@@ -98,20 +102,20 @@ class ExportACFBodyData(Operator, ExportHelper):
             # position 0 -> (n/2-1)
             coord = points[point_indx]
 
-            self.write_station_element(o_file, station_indx, station_z, point_indx, coord.x, coord.y)
+            self.write_station_element(o_file, station_indx, station_z, point_indx, coord.x, coord.y, body_id)
             # reflected in x (n-1) -> n/2
-            self.write_station_element(o_file, station_indx, station_z, (num_points * 2) - 1 - point_indx, -(coord.x), coord.y)
+            self.write_station_element(o_file, station_indx, station_z, (num_points * 2) - 1 - point_indx, -(coord.x), coord.y, body_id)
 
         # now add the blank entries from numpoints to 18
         for i in range(num_points * 2, 18):
-            self.write_station_element(o_file, station_indx, station_z, i, 0, 0)
+            self.write_station_element(o_file, station_indx, station_z, i, 0, 0, body_id)
 
         pass
 
-    def write_blank_station_data(self, o_file: IO, first_station_indx: int, count: int):
+    def write_blank_station_data(self, o_file: IO, first_station_indx: int, count: int, body_id: int):
         for station_indx in range(first_station_indx, first_station_indx + count):
             for n in range(18):
-                self.write_station_element(o_file, station_indx, 0.0, n, 0.0, 0.0)
+                self.write_station_element(o_file, station_indx, 0.0, n, 0.0, 0.0, body_id)
 
     def write_data(self, context):
         # selection should be a set of curves
@@ -160,6 +164,15 @@ class ExportACFBodyData(Operator, ExportHelper):
         # now take the zero position
         zero_z_pos = self.global_location_in_local_orientation(sorted_curve_objects[0]).z
 
+        # do we have a body id specified?
+        body_id = 0
+
+        if len(sorted_curve_objects) > 0:
+            # take the id from the first curve so we enforce a consistent id throughout!
+            body_id_prop = sorted_curve_objects[0].get('body_id')
+            if body_id_prop != None:
+                body_id = body_id_prop
+
         # deal with the output file backup
         of_path = pathlib.Path(self.filepath)
         if of_path.is_file():
@@ -171,11 +184,11 @@ class ExportACFBodyData(Operator, ExportHelper):
         # now output the content
         with of_path.open('w') as f:
             for curve in sorted_curve_objects:
-                self.write_station_data(f, curve, zero_z_pos, sorted_curve_objects.index(curve))
+                self.write_station_data(f, curve, zero_z_pos, sorted_curve_objects.index(curve), body_id)
 
             # fill the blank elements up to curve 20
             last_index = len(sorted_curve_objects)
-            self.write_blank_station_data(f, last_index, 20 - last_index)
+            self.write_blank_station_data(f, last_index, 20 - last_index, body_id)
 
         return {'FINISHED'}
 
