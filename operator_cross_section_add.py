@@ -268,11 +268,11 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
         # need at least 2 objects selected and 1 active
         return context.active_object is not None and len(context.selected_objects) > 1
 
-    def generate_section(self, context, z_offset):
+    def generate_section(self, context, z_offset: float, z_adjust: float, body_id: int):
         # take the z axis from the active object
         plane_location = context.active_object.location.copy()
         plane_z = Vector((0, 0, -1))
-        plane_z.rotate(context.active_object.matrix_basis.to_euler())
+        plane_z.rotate(context.active_object.matrix_world.to_euler())
 
         plane_location = plane_location + plane_z * z_offset
 
@@ -284,7 +284,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
 
                 # make sure the mesh is baked to the object transforms
                 # apply transforms equivalent
-                bm.transform(target_object.matrix_basis)
+                bm.transform(target_object.matrix_world)
 
                 verts, edge_indices = generate_sections(bm, plane_location, plane_z)
 
@@ -303,7 +303,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
 
                     mat_offset = mathutils.Matrix.Translation(Vector((0, 0, z_offset)))
 
-                    bm.transform(mat_offset @ context.active_object.matrix_basis.inverted())
+                    bm.transform(mat_offset @ context.active_object.matrix_world.inverted())
 
                     bm.to_mesh(mesh)
 
@@ -398,6 +398,13 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                 curve_obj.location = plane_location  # context.active_object.location
                 curve_obj.rotation_euler = context.active_object.rotation_euler
 
+                # record the offset in z if we have one
+                if z_adjust != 0.0:
+                    curve_obj['z_adjust'] = z_adjust
+
+                if body_id != 0:
+                    curve_obj['body_id'] = body_id
+
                 # attach to scene
                 context.view_layer.active_layer_collection.collection.objects.link(curve_obj)
 
@@ -418,15 +425,25 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
             return {'FINISHED'}
 
         sample_offsets = [0.0]
-        z_offset_prop = context.active_object.get('z_offsets')
+        z_offset_prop = context.active_object.get('z_samples')
         if z_offset_prop != None:
             if type(z_offset_prop) is idprop.types.IDPropertyArray:
                 sample_offsets = z_offset_prop.to_list()
             else:
                 sample_offsets = [z_offset_prop]
 
+        z_adjust = 0.0
+        z_adjust_prop = context.active_object.get('z_adjust')
+        if z_adjust_prop != None:
+            z_adjust = z_adjust_prop
+
+        body_id = 0
+        body_id_prop = context.active_object.get('body_id')
+        if body_id_prop != None:
+            body_id = body_id_prop
+
         for offset in sample_offsets:
-            self.generate_section(context, offset)
+            self.generate_section(context, offset, z_adjust, body_id)
 
         return {'FINISHED'}
 
