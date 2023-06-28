@@ -208,7 +208,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
     generate_meshes: BoolProperty(
         name="Generate Meshes",
         description="Should we generate (and keep) a cross section Mesh for each object in the selection",
-        default=True
+        default=False
     )
     generate_curve: BoolProperty(
         name="Generate Curve",
@@ -239,7 +239,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
     generate_bezier: BoolProperty(
         name="Generate bezier curve",
         description="Generate the curve as a Bezier curve, alternative is a polyline",
-        default=True
+        default=False
     )
 
     def draw(self, context):
@@ -267,6 +267,46 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
     def poll(cls, context):
         # need at least 2 objects selected and 1 active
         return context.active_object is not None and len(context.selected_objects) > 1
+
+    def generate_curve_from_points(self, context, plane_location: Vector, points: list[Vector], z_adjust: float, body_id: int):
+        # create the Curve Datablock
+        curve_data = bpy.data.curves.new('myCurve', type='CURVE')
+
+        # map coords to spline
+        if self.generate_bezier:
+            polyline = curve_data.splines.new('BEZIER')
+        else:
+            polyline = curve_data.splines.new('POLY')
+
+        # if we are sampling 360 the resultant spline should be cyclic!
+        polyline.use_cyclic_u = not self.half_section_sampling
+
+        if self.generate_bezier:
+            polyline.bezier_points.add(len(points) - 1)
+            for i, coord in enumerate(points):
+                polyline.bezier_points[i].co = points[i]
+                polyline.bezier_points[i].handle_left_type = 'AUTO'
+                polyline.bezier_points[i].handle_right_type = 'AUTO'
+        else:
+            polyline.points.add(len(points) - 1)
+            for i, coord in enumerate(points):
+                polyline.points[i].co = points[i].to_4d()
+
+        # create Object
+        curve_obj = bpy.data.objects.new('myCurve', curve_data)
+        # Place at origin of the cutting plane
+        curve_obj.location = plane_location  # context.active_object.location
+        curve_obj.rotation_euler = context.active_object.rotation_euler
+
+        # record the offset in z if we have one
+        if z_adjust != 0.0:
+            curve_obj['z_adjust'] = z_adjust
+
+        if body_id != 0:
+            curve_obj['body_id'] = body_id
+
+        # attach to scene
+        context.view_layer.active_layer_collection.collection.objects.link(curve_obj)
 
     def generate_section(self, context, z_offset: float, z_adjust: float, body_id: int):
         # take the z axis from the active object
@@ -302,20 +342,26 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
                         bm.edges.new([bm.verts[i] for i in edge_idx])
 
                     mat_offset = mathutils.Matrix.Translation(Vector((0, 0, z_offset)))
-
                     bm.transform(mat_offset @ context.active_object.matrix_world.inverted())
-
                     bm.to_mesh(mesh)
-
                     # free the mesh storage
                     bm.free()
-
                     mesh.update()
-
                     meshes.append(mesh)
 
         if len(meshes) == 0:
-            self.report({'INFO'}, 'No cross sections generated')
+            self.report({'WARNING'}, f'No cross sections generated at offset {z_offset}')
+
+            # add an empty (0,0,0) curve at the sampling point!
+            if self.generate_curve:
+                sample_angles_prop = target_object.get('sample_angles')
+                point_count = self.num_samples
+                if sample_angles_prop:
+                    point_count = len(sample_angles_prop)
+
+                points = [Vector((0,0,0))] * point_count
+                self.generate_curve_from_points(context, plane_location, points, z_adjust, body_id)
+
         else:
             section_objects = []
             for mesh in meshes:
@@ -369,44 +415,7 @@ class OBJECT_OT_AddSections(bpy.types.Operator, AddObjectHelper):
 
                 # print('points {}'.format(points))
 
-                # create the Curve Datablock
-                curve_data = bpy.data.curves.new('myCurve', type='CURVE')
-
-                # map coords to spline
-                if self.generate_bezier:
-                    polyline = curve_data.splines.new('BEZIER')
-                else:
-                    polyline = curve_data.splines.new('POLY')
-
-                # if we are sampling 360 the resultant spline should be cyclic!
-                polyline.use_cyclic_u = not self.half_section_sampling
-
-                if self.generate_bezier:
-                    polyline.bezier_points.add(len(points) - 1)
-                    for i, coord in enumerate(points):
-                        polyline.bezier_points[i].co = points[i]
-                        polyline.bezier_points[i].handle_left_type = 'AUTO'
-                        polyline.bezier_points[i].handle_right_type = 'AUTO'
-                else:
-                    polyline.points.add(len(points) - 1)
-                    for i, coord in enumerate(points):
-                        polyline.points[i].co = points[i].to_4d()
-
-                # create Object
-                curve_obj = bpy.data.objects.new('myCurve', curve_data)
-                # Place at origin of the cutting plane
-                curve_obj.location = plane_location  # context.active_object.location
-                curve_obj.rotation_euler = context.active_object.rotation_euler
-
-                # record the offset in z if we have one
-                if z_adjust != 0.0:
-                    curve_obj['z_adjust'] = z_adjust
-
-                if body_id != 0:
-                    curve_obj['body_id'] = body_id
-
-                # attach to scene
-                context.view_layer.active_layer_collection.collection.objects.link(curve_obj)
+                self.generate_curve_from_points(context, plane_location, points, z_adjust, body_id)
 
             # delete or preserve the section meshes
             for section_object in section_objects:
