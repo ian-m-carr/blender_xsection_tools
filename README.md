@@ -31,16 +31,16 @@ The second screenshot below shows a cross-section generated with the cutting pla
 The next shot shows a more complex model comprised of several objects and internal structure 
 (an aircraft engine nacelle) The slicing plane is defined by the arrowed empty at the nose.
 
-![Screenshot](documentation/screenshot_3.jpg)
+![Screenshot](documentation/screenshot_3.JPG)
 
 In this case the empty carries a number of optional custom properties
 
-![Screenshot](documentation/screenshot_4.jpg)
+![Screenshot](documentation/screenshot_4.JPG)
 
 **z_samples:** The z_samples is a float array containing offset distances to generate a number of cross sections stepping back the 
 z ordinate by the given amounts:
 
-![Screenshot](documentation/screenshot_5.jpg)
+![Screenshot](documentation/screenshot_5.JPG)
 
 **z_adjust**:By default the exporter will set the Z 0 position as the position of the highest Z in the samples. The z_adjust is 
 basically used to modify the exported 0 position, in this case the X-Plane 'engine' location is a little to the right
@@ -51,7 +51,7 @@ contain an appropriately numbered body
 
 The next screen shows the content of the 'redo' panel 
 
-![Screenshot](documentation/screenshot_6.jpg)
+![Screenshot](documentation/screenshot_6.JPG)
 
 The 'Generate Meshes' panel indicates whether the meshes remain in the model on completion (they are always generated
 to be sampled but are only kept if this is checked)
@@ -78,10 +78,10 @@ contours of the body being sampled.
 
 The next shot shows the sampled curves for the nacelle
 
-![Screenshot](documentation/screenshot_7.jpg)
+![Screenshot](documentation/screenshot_7.JPG)
 
 And the next one shows the mesh cross sections generated. The front green one shows some internal structure and the 
 rear white one s actually composed of two meshes from two separate components. Thes have been sampled in the previous 
 shot to give the 'outer' surface curves shown
 
-![Screenshot](documentation/screenshot_8.jpg)
+![Screenshot](documentation/screenshot_8.JPG)
